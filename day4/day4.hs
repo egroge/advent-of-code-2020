@@ -1,76 +1,129 @@
-import Data.List (nub, sort, takeWhile, all)
-import Data.List.Split (splitOn)
-import Text.Read (readMaybe)
-import Data.Maybe (isJust)
-import Text.Regex.PCRE
+{-# LANGUAGE TypeApplications #-}
 
-data FieldKey = Ecl | Pid | Eyr | Hcl | Byr | Iyr | Cid | Hgt deriving (Eq, Show)
+import Text.Parsec hiding (between)
+import Data.Functor
+import Control.Monad
+import Control.Applicative (empty)
 
-type Field = (FieldKey, String)
+data Height = In Int | Cm Int deriving Show
+data EyeColor = Amb | Blu | Brn | Gry | Grn | Hzl | Oth deriving Show
+
+type HairColor = String
+type Year = Int
+
+data Field = Ecl EyeColor 
+  | Pid String 
+  | Eyr Year 
+  | Hcl HairColor 
+  | Byr Year 
+  | Iyr Year 
+  | Hgt Height
+  | Cid 
+  deriving Show
+
+instance Eq Field where 
+  Ecl _ == Ecl _ = True
+  Pid _ == Pid _ = True
+  Eyr _ == Eyr _ = True
+  Hcl _ == Hcl _ = True
+  Byr _ == Byr _ = True
+  Iyr _ == Iyr _ = True
+  Hgt _ == Hgt _ = True
+  Cid   == Cid   = True
+  _     == _     = False
+
 type Passport = [Field]
 
-requiredFields :: [FieldKey]
-requiredFields = [Ecl, Pid, Eyr, Hcl, Byr, Iyr, Hgt]
+between :: Int -> Int -> Int -> Bool 
+between l u n = l <= n && n <= u
 
--- PRE input is valid format
-field :: String ->  Field
-field s = case splitOn ":" s of
-            ["ecl", rem] -> (Ecl, rem) 
-            ["pid", rem] -> (Pid, rem) 
-            ["eyr", rem] -> (Eyr, rem) 
-            ["hcl", rem] -> (Hcl, rem) 
-            ["byr", rem] -> (Byr, rem) 
-            ["iyr", rem] -> (Iyr, rem) 
-            ["cid", rem] -> (Cid, rem) 
-            ["hgt", rem] -> (Hgt, rem) 
+infixl 3 <\>
+(<\>) :: ParsecT s u m a -> ParsecT s u m a -> ParsecT s u m a
+p <\> p' = try p <|> p'
 
-passport :: [String] -> Passport
-passport = nub . map field 
+height :: Parsec String u Height
+height = (Cm <$> cms >?> between 150 193) <\> (In <$> inches >?> between 59 76) 
+  where 
+    inches = (read @Int) <$> (sequence [digit, digit] <* string "in")
+    cms    = (read @Int) <$> (sequence [digit, digit, digit] <* string "cm")
+
+eyeColor :: Parsec String u EyeColor
+eyeColor = string "amb" $> Amb <\>
+  string "blu" $> Blu <\>
+  string "brn" $> Brn <\>
+  string "gry" $> Gry <\>
+  string "grn" $> Grn <\>
+  string "hzl" $> Hzl <\>
+  string "oth" $> Oth  
+
+(>?>) :: Parsec s u a -> (a -> Bool) -> Parsec s u a
+p >?> f = p >>= (\x -> if f x then pure x else empty)
+
+yearBetween :: Year -> Year -> Parsec String u Year
+yearBetween l u = ((read @Int) <$> replicateM 4 digit) >?> between l u
+
+ecl :: Parsec String u Field
+ecl = string "ecl:" *> (Ecl <$> eyeColor)
+
+pid :: Parsec String u Field
+pid = string "pid:" *> (Pid <$> replicateM 9 digit)
+
+eyr :: Parsec String u Field
+eyr = string "eyr:" *> (Eyr <$> yearBetween 2020 2030)
+
+byr :: Parsec String u Field
+byr = string "byr:" *> (Byr <$> yearBetween 1920 2002)
+
+iyr :: Parsec String u Field
+iyr = string "iyr:" *> (Iyr <$> yearBetween 2010 2020)
+
+hcl :: Parsec String u Field 
+hcl = string "hcl:" *> (Hcl <$> hairColor)
+  where 
+    hairColor = char '#' *> replicateM 6 (oneOf "abcdef0123456789")
+
+hgt :: Parsec String u Field 
+hgt = string "hgt:" *> (Hgt <$> height)
+
+cid :: Parsec String u Field
+cid = (string "cid:" *> many (noneOf " ")) $> Cid
+
+field :: Parsec String u Field
+field = ecl <\> pid <\> eyr <\> byr <\> iyr <\> hcl <\> hgt <\> cid
+
+passport :: Parsec String u Passport
+passport = field `sepBy1` try (oneOf " \n" *> notFollowedBy (char '\n'))
+
+(<:>) :: Applicative f => f a -> f[a] -> f [a]
+(<:>) x xs = (:) <$> x <*> xs
+
+passports :: Parsec String u [Passport]
+-- passports = passport `sepBy` string "\n\n" 
+passports = passport <:> (passports <|> (eof $> []))
 
 getPassports :: String -> IO [Passport]
-getPassports raw = return $ map passport entries 
+getPassports s = return res'
   where 
-    entries = map words $ splitOn "\n\n" raw
+    res' = either (const []) id res
+    res  = runParser passports () "" s
 
+partTwo :: [Passport] -> Int 
+partTwo ps = length $ filter passportHasRequiredFields ps
+
+-- TODO this is a horrible way to do this
 passportHasRequiredFields :: Passport -> Bool 
-passportHasRequiredFields p = all (`elem` ks) requiredFields
+passportHasRequiredFields p = all (`elem` p) requiredFields 
   where 
-    ks = map fst p
+    requiredFields = [Ecl Amb, Pid "", Eyr 0, Hcl "", Byr 0, Iyr 0, Hgt (In 0)]
 
-fieldValid :: Field -> Bool 
-fieldValid (k, v) = case k of 
-                      Byr -> stringBetween v 1920 2002
-                      Iyr -> stringBetween v 2010 2020
-                      Eyr -> stringBetween v 2020 2030
-                      Hgt -> validHeight
-                      Hcl -> v =~ "^#[\\da-f]{6}$" :: Bool
-                      Ecl -> v `elem` ["amb", "blu", "brn", "gry", "grn", "hzl", "oth"]
-                      Pid -> length v == 9 && isJust (asNum v)
-                      Cid -> True
-  where
-    validHeight = case v =~ "^(\\d\\d\\d)cm$|^(\\d\\d)in$" :: [[String]] of 
-                    [[_, "", n]] -> stringBetween n 59 76
-                    [[_, n, ""]] -> stringBetween n 150 193
-                    _ -> False 
-
-    asNum s = readMaybe s :: Maybe Int
-    stringBetween s l u = case asNum s of 
-                            Just n  -> l <= n && n <= u
-                            Nothing -> False 
-
-passportValid :: Passport -> Bool 
-passportValid p = all fieldValid p && passportHasRequiredFields p
-
-partOne :: [Passport] -> Int 
-partOne = length . filter passportHasRequiredFields
-
-partTwo :: [Passport] -> Int
-partTwo = length . filter passportValid
+test :: Parsec String () a -> String -> Either ParseError a
+test p = runParser p () ""
 
 -- Answers: 228 175
 main :: IO () 
 main = do 
-  contents  <- readFile "input.txt"
+  contents  <- readFile "valid.txt"
   passports <- getPassports contents
-  print $ partOne passports
+  -- print $ partOne passports
+  print passports
   print $ partTwo passports
