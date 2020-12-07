@@ -6,10 +6,17 @@ import Data.Functor
 import Data.Maybe
 import Data.List
 import Data.Array
+import Data.Ord
 
 type BagType = String 
 type BagQuantity = (Int, BagType)
 type Rule = (BagType, [BagQuantity])
+
+types :: [Rule] -> [BagType]
+types = map fst
+
+contains :: Rule -> [BagType]
+contains = map snd . snd 
 
 (<:>) :: Applicative f => f a -> f [a] -> f [a]
 fa <:> fas = (:) <$> fa <*> fas
@@ -21,8 +28,8 @@ p <\> p' = try p <|> p'
 (<~>) :: Parsec s u a -> Parsec s u b -> (Parsec s u (a, b))
 p <~> p' = (,) <$> p <*> p'
 
-lookUp :: Eq a => a -> [(a, b)] -> (a, b)
-lookUp a = fromJust . find ((a ==) . fst) 
+lookUp :: Eq a => a -> [(a, b)] ->  b
+lookUp a = fromJust . lookup a
 
 word :: Parsec String u String 
 word = many (noneOf " \n")
@@ -44,27 +51,24 @@ getRule = either (const (error ":(")) id . runParser rule () ""
 tabulate :: Ix i => (i, i) -> (i -> a) -> Array i a 
 tabulate (u, v) f = array (u, v) [(i, f i) | i <- range (u, v)]
 
--- TODO this is now dynamic, but kinda gross
+-- TODO this is now dynamic and fast, but kinda messy :()
 getContainers :: [Rule] -> BagType -> [BagType]
-getContainers rs b = map fst $ filter (\(b', l) -> b `elem` l) allContainers
+getContainers rs b = map fst $ transitiveContainers
   where 
-    allContainers :: [(BagType, [BagType])]
-    allContainers = map (\n -> (fst (sorted !! n), arr ! n)) [0.. length sorted - 1]
-
-    sorted = sortBy (\x y -> compare (length (snd x)) (length (snd y))) rs
-    ind b' = fromJust $ findIndex (== b') (map fst sorted)
-    arr = tabulate (0, length sorted) memo
-    memo i 
-      | qs == []  = [] 
-      | otherwise = others ++ concatMap ((arr !) . ind) others
+    transitiveContainers = filter (\(b', l) -> b `elem` l) allContainers 
+    allContainers        = zip sorted (elems arr)
+    sorted               = sortBy (comparing numContained) (types rs)
+    numContained b       = length $ lookUp b rs
+    arr                  = tabulate (0, length sorted) memo
+    memo i               = containing ++ concatMap ((arr !) . ind) containing
       where 
-        others = map snd qs
-        qs     = snd (sorted !! i)
+        ind b'     = fromJust $ findIndex (== b') sorted
+        containing = map snd $ lookUp (sorted !! i) rs
 
 totalNumBags :: [Rule] -> BagType -> Int
 totalNumBags rs b
-  | (_, []) <- lookUp b rs = 1
-  | (_, qs) <- lookUp b rs = succ $ sum $ map (\(n, b') -> n * totalNumBags rs b') qs
+  | [] <- lookUp b rs = 1
+  | qs <- lookUp b rs = succ $ sum $ map (\(n, b') -> n * totalNumBags rs b') qs
 
 partOne :: [Rule] -> Int 
 partOne rs = length $ getContainers rs "shinygold"
