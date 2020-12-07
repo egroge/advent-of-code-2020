@@ -5,6 +5,7 @@ import Text.Parsec hiding ((<|>))
 import Data.Functor
 import Data.Maybe
 import Data.List
+import Data.Array
 
 type BagType = String 
 type BagQuantity = (Int, BagType)
@@ -13,6 +14,7 @@ type Rule = (BagType, [BagQuantity])
 (<:>) :: Applicative f => f a -> f [a] -> f [a]
 fa <:> fas = (:) <$> fa <*> fas
 
+infixl 3 <\>
 (<\>) :: Parsec s u a -> Parsec s u a -> Parsec s u a 
 p <\> p' = try p <|> p'
 
@@ -29,7 +31,7 @@ bag :: Parsec String u BagType
 bag = (++) <$> (word <* oneOf " ") <*> (word)
 
 rule :: Parsec String u Rule
-rule = (,) <$> (bag <* string " bags contain ") <*> ((noBags $> []) <\> (bagQuantities)) <* char '.'
+rule = (bag <* string " bags contain ") <~> ((noBags $> []) <\> bagQuantities) <* char '.'
   where
     noBags = string "no other bag" <* optional (char 's')
     bagQuantities = bagQuantity `sepBy` string ", "
@@ -39,28 +41,31 @@ rule = (,) <$> (bag <* string " bags contain ") <*> ((noBags $> []) <\> (bagQuan
 getRule :: String -> Rule
 getRule = either (const (error ":(")) id . runParser rule () ""
 
-containerOf :: [Rule] -> BagType -> [BagType]
-containerOf rs b = map (snd) (snd $ lookUp b rs) 
+tabulate :: Ix i => (i, i) -> (i -> a) -> Array i a 
+tabulate (u, v) f = array (u, v) [(i, f i) | i <- range (u, v)]
 
-directlyContainedBy :: [Rule] -> BagType -> BagType -> Bool
-directlyContainedBy rs b b' = b `elem` containerOf rs b'
-
--- TODO: make this dynamic
-transitivelyContainedBy :: [Rule] -> BagType -> BagType -> Bool 
-transitivelyContainedBy rs b b' = directly || indirectly
-  where 
-    directly   = directlyContainedBy rs b b'
-    indirectly = any (transitivelyContainedBy rs b) (containerOf rs b')
-
+-- TODO this is now dynamic, but kinda gross
 getContainers :: [Rule] -> BagType -> [BagType]
-getContainers rs b = filter (transitivelyContainedBy rs b) (map fst rs)
+getContainers rs b = map fst $ filter (\(b', l) -> b `elem` l) allContainers
+  where 
+    allContainers :: [(BagType, [BagType])]
+    allContainers = map (\n -> (fst (sorted !! n), arr ! n)) [0.. length sorted - 1]
+
+    sorted = sortBy (\x y -> compare (length (snd x)) (length (snd y))) rs
+    ind b' = fromJust $ findIndex (== b') (map fst sorted)
+    arr = tabulate (0, length sorted) memo
+    memo i 
+      | qs == []  = [] 
+      | otherwise = others ++ concatMap ((arr !) . ind) others
+      where 
+        others = map snd qs
+        qs     = snd (sorted !! i)
 
 totalNumBags :: [Rule] -> BagType -> Int
 totalNumBags rs b
   | (_, []) <- lookUp b rs = 1
   | (_, qs) <- lookUp b rs = succ $ sum $ map (\(n, b') -> n * totalNumBags rs b') qs
 
--- TODO: this is SLOW
 partOne :: [Rule] -> Int 
 partOne rs = length $ getContainers rs "shinygold"
 
@@ -72,5 +77,5 @@ main :: IO ()
 main = do 
   contents <- readFile "input"
   let rules = map getRule (lines contents)
-  -- print (partOne rules) 
+  print (partOne rules) 
   print (partTwo rules)
