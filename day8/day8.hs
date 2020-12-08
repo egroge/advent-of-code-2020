@@ -57,8 +57,8 @@ getProgram s = array (0, length instrs - 1) instrs
 
 step :: Context -> Maybe Context 
 step (C prog pc acc) 
-  | pc < length prog = Just next
-  | otherwise             = Nothing
+  | inRange (bounds prog) pc = Just next
+  | otherwise                = Nothing
   where 
     next = case prog ! pc of 
              Nop _ -> C prog (pc + 1) acc
@@ -84,9 +84,12 @@ partOne c = accum $ fst $ runUntilLoopingOrDone c
 fixLoopingMachine :: Context -> Context
 fixLoopingMachine (C prog start startAcc) = C fixed start startAcc
   where
+    fixed :: Array Label Instr
     fixed = runSTArray $ findFix 0 
 
+    findFix :: Label -> ST s (STArray s Label Instr)
     findFix l = do 
+      -- Does this progMut get computed every time? Is that expensive?
       progMut <- unsafeThaw prog
       let terminates arr = runUntilLoopingOrDone (C arr start startAcc)
       (_, isFix) <- testFix progMut l (terminates <$> unsafeFreeze progMut)
@@ -97,7 +100,6 @@ fixLoopingMachine (C prog start startAcc) = C fixed start startAcc
         return progMut
       else findFix (l + 1)
 
-    -- TODO check bounds of l
     testFix :: STArray s Label Instr -> Label -> ST s b -> ST s b 
     testFix arr l action = do
       oldInstr <- readArray arr l 
@@ -109,8 +111,6 @@ fixLoopingMachine (C prog start startAcc) = C fixed start startAcc
     changeElem (Nop i) = Jmp i
     changeElem (Jmp i) = Nop i
     changeElem other   = other     
-
-
 
 partTwo :: Context -> Int
 partTwo c = accum $ fst $ runUntilLoopingOrDone fixed
