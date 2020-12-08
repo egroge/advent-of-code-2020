@@ -25,7 +25,7 @@ infixl 3 <\>
 (<\>) :: Parsec s u a -> Parsec s u a -> Parsec s u a 
 p <\> p' = try p <|> p'
 
-(<~>) :: Parsec s u a -> Parsec s u b -> (Parsec s u (a, b))
+(<~>) :: Parsec s u a -> Parsec s u b -> Parsec s u (a, b)
 p <~> p' = (,) <$> p <*> p'
 
 lookUp :: Eq a => a -> [(a, b)] ->  b
@@ -35,7 +35,7 @@ word :: Parsec String u String
 word = many (noneOf " \n")
 
 bag :: Parsec String u BagType
-bag = (++) <$> (word <* oneOf " ") <*> (word)
+bag = (++) <$> (word <* oneOf " ") <*> word
 
 rule :: Parsec String u Rule
 rule = (bag <* string " bags contain ") <~> ((noBags $> []) <\> bagQuantities) <* char '.'
@@ -51,18 +51,18 @@ getRule = either (const (error ":(")) id . runParser rule () ""
 tabulate :: Ix i => (i, i) -> (i -> a) -> Array i a 
 tabulate (u, v) f = array (u, v) [(i, f i) | i <- range (u, v)]
 
--- TODO this is now dynamic and fast, but kinda messy :()
+-- TODO this is now dynamic and fast, but kinda messy :(
 getContainers :: [Rule] -> BagType -> [BagType]
-getContainers rs b = map fst $ transitiveContainers
-  where 
+getContainers rs b = map fst transitiveContainers
+  where
     transitiveContainers = filter (\(b', l) -> b `elem` l) allContainers 
     allContainers        = zip sorted (elems arr)
-    sorted               = sortBy (comparing numContained) (types rs)
+    sorted               = sortOn numContained (types rs)
     numContained b       = length $ lookUp b rs
     arr                  = tabulate (0, length sorted) memo
     memo i               = containing ++ concatMap ((arr !) . ind) containing
       where 
-        ind b'     = fromJust $ findIndex (== b') sorted
+        ind b'     = fromJust $ elemIndex b' sorted
         containing = map snd $ lookUp (sorted !! i) rs
 
 totalNumBags :: [Rule] -> BagType -> Int
