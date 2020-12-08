@@ -85,12 +85,10 @@ fixLoopingMachine :: Context -> Context
 fixLoopingMachine (C prog start startAcc) = C fixed start startAcc
   where
     fixed :: Array Label Instr
-    fixed = runSTArray $ findFix 0 
+    fixed = runSTArray $ unsafeThaw prog >>= findFix 0
 
-    findFix :: Label -> ST s (STArray s Label Instr)
-    findFix l = do 
-      -- Does this progMut get computed every time? Is that expensive?
-      progMut <- unsafeThaw prog
+    findFix :: Label -> STArray s Label Instr -> ST s (STArray s Label Instr)
+    findFix l progMut = do
       let terminates arr = runUntilLoopingOrDone (C arr start startAcc)
       (_, isFix) <- testFix progMut l (terminates <$> unsafeFreeze progMut)
       
@@ -98,7 +96,7 @@ fixLoopingMachine (C prog start startAcc) = C fixed start startAcc
         oldInstr <- readArray progMut l 
         writeArray progMut l (changeElem oldInstr)
         return progMut
-      else findFix (l + 1)
+      else findFix (l + 1) progMut
 
     testFix :: STArray s Label Instr -> Label -> ST s b -> ST s b 
     testFix arr l action = do
