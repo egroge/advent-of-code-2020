@@ -24,10 +24,6 @@ label (C _ l _) = l
 accum :: Context -> Accum 
 accum (C _ _ a) = a
 
-infixl 3 <\>
-(<\>) :: Parsec s u a -> Parsec s u a -> Parsec s u a 
-p <\> p' = try p <|> p'
-
 (<:>) :: Parsec s u a -> Parsec s u [a] -> Parsec s u [a] 
 p <:> p' = (:) <$> p <*> p'
 
@@ -41,11 +37,10 @@ jmp :: Parsec String u (Int -> Instr)
 jmp = string "jmp " $> Jmp
 
 operand :: Parsec String u Int
--- TODO would prefer char '-' to be optional or something
-operand = read @Int <$> (char '-' <:> many1 digit <\> char '+' *> many1 digit)
+operand = (char '-' $> negate <|> char '+' $> id) <*> (read @Int <$> many1 digit)
 
 cmd :: Parsec String u Instr
-cmd = (nop <\> acc <\> jmp) <*> operand
+cmd = (nop <|> acc <|> jmp) <*> operand
 
 cmds :: Parsec String u [Instr]
 cmds = (cmd `sepBy` char '\n') <* eof
