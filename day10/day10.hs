@@ -22,24 +22,19 @@ combs :: [Jolt] -> Int
 combs js = evalState (combs' js) empty
   where
     combs' :: [Int] -> State (Map [Int] Int) Int
-    combs' js@(j : _ : j' : js') = do 
-        m <- get
-        case m !? js of 
-          Just n  -> return n 
-          Nothing -> do
-            nKept <- combs' (tail js)
-           
-            if j' - j <= 3 
-            then do 
-              nDiscarded <- combs' (j : j' : js')
-              let both = nDiscarded + nKept
-              m' <- get 
-              put (insert js both m')
-              return both
-            else do 
-              m' <- get
-              put (insert js nKept m')
-              return nKept 
+    combs' js@(j : _ : j' : js') = do
+      m <- get
+      case m !? js of 
+        Just n  -> return n 
+        Nothing -> do
+          nKept <- combs' (tail js)
+
+          if j' - j <= 3 then do 
+            nDiscarded <- combs' (j : j' : js')
+            let both = nDiscarded + nKept
+            get >>= put . insert js both >> return both
+          else 
+            get >>= put . insert js nKept >> return nKept
     combs' js = do
       m <- get 
       case m !? js of 
