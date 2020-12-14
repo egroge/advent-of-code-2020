@@ -78,10 +78,8 @@ mask1 = zipWith andBit
     andBit _ (B b) = b
 
 step1 :: ProgramState -> ProgramState
-step1 (P msk ((Write (Assign addr val)) : as) mem) 
-  = P msk as (M.insert addr (binToDec (mask1 val msk)) mem)
-step1 (P _ ((Update msk) : as) mem) 
-  = P msk as mem
+step1 (P msk ((Write a) : as) mem)  = P msk as (write a mem)
+step1 (P _ ((Update msk) : as) mem) = P msk as mem
 
 -- NOTE: This is infeasible on any mask with too many Xs. Cannot think of a way to avoid that.
 -- For example, the mask in the sample file is too much for it
@@ -89,18 +87,15 @@ mask2 :: [Bit] -> Mask -> [[Bit]]
 mask2 [] _                  = [[]]
 mask2 (b : bs) ((B O) : ms) = map (b :) $ mask2 bs ms 
 mask2 (_ : bs) ((B I) : ms) = map (I :) $ mask2 bs ms
-mask2 (_ : bs) (X : ms)     = map (I :) rem ++ map (O :) rem
-  where 
-    rem = mask2 bs ms
+mask2 (_ : bs) (X : ms)     = let rem = mask2 bs ms 
+                              in  map (I :) rem ++ map (O :) rem
 
-updateMemory :: [Assignment] -> Memory -> Memory
-updateMemory as m = foldr write m as
-  where 
-    write (Assign addr val) = M.insert addr (binToDec val)
+write :: Assignment -> Memory -> Memory
+write (Assign addr val) = M.insert addr (binToDec val)
 
 step2 :: ProgramState -> ProgramState
 step2 (P msk ((Write (Assign addr val)) : as) mem) 
-  = P msk as (updateMemory assigns mem)
+  = P msk as (foldr write mem assigns)
   where 
     assigns = map (\a -> Assign (binToDec a) val) (mask2 (decTo36Bin addr) msk)
 step2 (P _ ((Update msk) : as) mem) 
