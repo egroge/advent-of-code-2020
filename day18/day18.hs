@@ -21,7 +21,7 @@ subExpr expr = char '(' *> (Sub <$> expr) <* char ')'
 exprAddMul :: Parsec String u Expr
 exprAddMul = chainl1 term (try mul) 
   where 
-    atom = num <|> subExpr exprNoPrecendence
+    atom = num <|> subExpr exprAddMul
     term = chainl1 atom (try add)
 
 exprNoPrecendence :: Parsec String u Expr
