@@ -1,31 +1,44 @@
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 
 import Text.Parsec hiding ((<|>), empty, many)
 import Control.Applicative
 import Data.Functor
+import Data.String
 
 data Expr = Num Int | Add Expr Expr | Mul Expr Expr | Sub Expr deriving Show
 
+instance (s ~ String) => IsString (Parsec String u s) where 
+  fromString = lexeme . string
+
+whitespace :: Parsec String u String 
+whitespace = many (char ' ')
+
+lexeme :: Parsec String u a -> Parsec String u a 
+lexeme p = p <* whitespace
+
 num :: Parsec String u Expr 
-num = Num . read @Int <$> many1 digit
+num = lexeme $ Num . read @Int <$> many1 digit
 
 add :: Parsec String u (Expr -> Expr -> Expr)
-add = string " + " $> Add
+add = "+" $> Add
 
 mul :: Parsec String u (Expr -> Expr -> Expr)
-mul = string " * " $> Mul
+mul = "*" $> Mul
 
 subExpr :: Parsec String u Expr -> Parsec String u Expr 
-subExpr expr = char '(' *> (Sub <$> expr) <* char ')' 
+subExpr expr = "(" *> (Sub <$> expr) <* ")"
 
 exprAddMul :: Parsec String u Expr
-exprAddMul = chainl1 term (try mul) 
+exprAddMul = chainl1 term mul 
   where 
     atom = num <|> subExpr exprAddMul
-    term = chainl1 atom (try add)
+    term = chainl1 atom add
 
 exprNoPrecendence :: Parsec String u Expr
-exprNoPrecendence = chainl1 atom (try add <|> mul)
+exprNoPrecendence = chainl1 atom (add <|> mul)
   where 
     atom = num <|> subExpr exprNoPrecendence
 
