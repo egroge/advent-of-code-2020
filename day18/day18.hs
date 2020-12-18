@@ -4,45 +4,52 @@ import Text.Parsec hiding ((<|>), empty, many)
 import Control.Applicative
 import Data.Functor
 
-data Term = Num Int | Add Term | Mul Term | Sub Expr deriving Show
-type Expr = [Term]
+data Expr = Num Int | Add Expr Expr | Mul Expr Expr | Sub Expr deriving Show
 
-infixl 3 <\>
-(<\>) :: Parsec s u a -> Parsec s u a -> Parsec s u a
-p <\> p' = try p <|> p'
-
-num :: Parsec String u Term 
+num :: Parsec String u Expr 
 num = Num . read @Int <$> many1 digit
 
-infixOp :: Parsec String u (Term -> Term)
-infixOp = (string " + " $> Add) <\> (string " * " $> Mul) 
+add :: Parsec String u (Expr -> Expr -> Expr)
+add = string " + " $> Add
 
-subExpr :: Parsec String u Term 
-subExpr = char '(' *> (Sub <$> expr) <* char ')' 
+mul :: Parsec String u (Expr -> Expr -> Expr)
+mul = string " * " $> Mul
 
-term :: Parsec String u Term
-term = subExpr <\> num <\> (infixOp <*> term) 
+subExpr :: Parsec String u Expr -> Parsec String u Expr 
+subExpr expr = char '(' *> (Sub <$> expr) <* char ')' 
 
-expr :: Parsec String u Expr
-expr = many1 term
+exprAddMul :: Parsec String u Expr
+exprAddMul = chainl1 term (try mul) 
+  where 
+    atom = num <|> subExpr exprNoPrecendence
+    term = chainl1 atom (try add)
 
-exprs :: Parsec String u [Expr]
-exprs = try expr `sepBy` char '\n'
+exprNoPrecendence :: Parsec String u Expr
+exprNoPrecendence = chainl1 atom (try add <|> mul)
+  where 
+    atom = num <|> subExpr exprNoPrecendence
 
-getExprs :: String -> IO [Expr]
-getExprs = return . either (error . show) id . runParser exprs () "" 
+exprs :: Parsec String u Expr -> Parsec String u [Expr]
+exprs p = p `sepBy` char '\n'
 
--- eval :: Expr -> Int 
--- eval e = go Nothing e
---   where 
---     go Nothing (Num n)  = n
---     go (Just n) (Add e) = n + go 
- 
+getExprs :: String -> Parsec String () Expr -> IO [Expr]
+getExprs s e = return $ either (error . show) id $ runParser (exprs e) () "" s
+
+eval :: Expr -> Int 
+eval (Num n) = n
+eval (Add e e') = eval e + eval e'
+eval (Mul e e') = eval e * eval e'
+eval (Sub e)    = eval e
+
+solution :: [Expr] -> Int 
+solution = sum . map eval
 
 main :: IO () 
 main = do 
-  contents <- readFile "sample"
-  print contents
-  es       <- getExprs contents 
-  mapM_ print es
+  contents <- readFile "input"
+  esNoPrec <- getExprs contents exprNoPrecendence
+  esPrec   <- getExprs contents exprAddMul
+  print $ solution esNoPrec
+  print $ solution esPrec
+
 
