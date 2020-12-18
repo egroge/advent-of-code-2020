@@ -19,7 +19,11 @@ neighbours3 (C3 x y z) = let diffs = [-1, 0, 1]
                             dx <- diffs, dy <- diffs, dz <- diffs, dx /= 0 || dy /= 0 || dz /= 0]
 
 neighbours4 :: Coord4 -> [Coord4]
-neighbours4 (C4 x y z w) = [C4 x' y' z' w | (C3 x' y' z') <- neighbours3 (C3 x y z), dw <- [-1, 0, 1]]
+neighbours4 (C4 x y z w) = let diffs = [-1, 0, 1]
+                           in [C4 (x + dx) (y + dy) (z + dz) (w + dw) | 
+                            dx <- diffs, dy <- diffs, dz <- diffs, dw <- diffs, 
+                            dx /= 0 || dy /= 0 || dz /= 0 || dw /= 0]
+
  
 step :: Ord a => (a -> [a]) -> Set a -> Set a
 step neighbours s = S.filter inactiveToActive inactive `union` S.filter activeStaysActive active
